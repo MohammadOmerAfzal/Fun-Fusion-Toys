@@ -21,7 +21,7 @@ services:
       - ./backend:/app/backend   # Mount backend code
     environment:
       MONGO_URL: mongodb://admin:password@mongo-ci:27017/funfusion?authSource=admin
-      PORT: 6000
+      PORT: 5050
     command: >
       sh -c "
       npm install &&
