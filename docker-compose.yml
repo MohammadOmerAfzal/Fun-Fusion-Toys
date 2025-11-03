@@ -20,7 +20,7 @@ services:
     volumes:
       - "./Basic Ecomerce:/app/backend"   # Mount backend code (escape space)
     environment:
-      MONGO_URI_DOCKER: mongodb://admin:password@mongo-ci:27017/ecommerce
+      MONGO_URI_DOCKER: mongodb://admin:password@mongo-ci:27017/ecommerce?authSource=admin
       PORT: 5050
     command: >
       sh -c "
