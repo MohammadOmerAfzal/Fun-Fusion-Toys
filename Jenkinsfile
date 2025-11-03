@@ -14,7 +14,7 @@ pipeline {
         stage('Stop Previous Containers') {
             steps {
                 sh '''
-                docker-compose down || true
+                docker compose down || true
                 '''
             }
         }
@@ -22,7 +22,7 @@ pipeline {
         stage('Start CI Containers') {
             steps {
                 sh '''
-                docker-compose up -d --build
+                docker compose up -d --build
                 '''
             }
         }
