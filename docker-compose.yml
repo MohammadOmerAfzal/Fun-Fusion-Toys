@@ -1,0 +1,53 @@
+version: '3.9'
+
+services:
+  mongo-ci:
+    image: mongo:6
+    container_name: mongo-ci
+    restart: always
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password
+    volumes:
+      - mongo_data:/data/db
+    ports:
+      - "27018:27017"
+
+  backend-ci:
+    image: node:20
+    container_name: backend-ci
+    working_dir: /app/backend
+    volumes:
+      - ./backend:/app/backend   # Mount backend code
+    environment:
+      MONGO_URL: mongodb://admin:password@mongo-ci:27017/funfusion?authSource=admin
+      PORT: 6000
+    command: >
+      sh -c "
+      npm install &&
+      npm start
+      "
+    ports:
+      - "6000:5000"
+    depends_on:
+      - mongo-ci
+
+  frontend-ci:
+    image: node:20
+    container_name: frontend-ci
+    working_dir: /app/frontend
+    volumes:
+      - ./frontend:/app/frontend   # Mount frontend code
+    command: >
+      sh -c "
+      npm install &&
+      npm run dev
+      "
+    ports:
+      - "5175:5173"     # Changed port for CI
+    depends_on:
+      - backend-ci
+
+volumes:
+  mongo_data:
+
