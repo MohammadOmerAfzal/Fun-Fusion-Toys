@@ -10,14 +10,6 @@ pipeline {
             }
         }
 
-        stage('Install Docker Compose') {
-            steps {
-                sh '''
-                sudo apt update
-                sudo apt-get install -y docker-compose
-                '''
-            }
-        }
 
         stage('Stop Previous Containers') {
             steps {
