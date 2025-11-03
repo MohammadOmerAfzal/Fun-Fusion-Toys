@@ -20,7 +20,7 @@ services:
     volumes:
       - "./Basic Ecomerce:/app/backend"   # Mount backend code (escape space)
     environment:
-      MONGO_URL: mongodb://admin:password@mongo-ci:27017/funfusion?authSource=admin
+      MONGO_URI_DOCKER: mongodb://admin:password@mongo-ci:27017/ecommerce
       PORT: 5050
     command: >
       sh -c "
