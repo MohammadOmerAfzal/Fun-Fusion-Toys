@@ -1,20 +1,36 @@
 pipeline {
     agent any
-
+    
     stages {
 
-        stage('Pull Code') {
+        stage('Clone Code') {
             steps {
-                git url: 'https://github.com/MohammadOmerAfzal/Fun-Fusion-Toys.git', branch: 'master'
+                git branch: 'main', url: 'https://github.com/YOUR_USER/YOUR_REPO.git'
             }
         }
 
-        stage('Build & Run Containers') {
+        stage('Install Docker Compose') {
             steps {
-                sh """
-                docker compose down || true
-                docker compose up -d --build
-                """
+                sh '''
+                sudo apt update
+                sudo apt-get install -y docker-compose
+                '''
+            }
+        }
+
+        stage('Stop Previous Containers') {
+            steps {
+                sh '''
+                docker-compose down || true
+                '''
+            }
+        }
+
+        stage('Start CI Containers') {
+            steps {
+                sh '''
+                docker-compose up -d --build
+                '''
             }
         }
     }
