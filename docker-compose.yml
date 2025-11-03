@@ -18,7 +18,7 @@ services:
     container_name: backend-ci
     working_dir: /app/backend
     volumes:
-      - ./backend:/app/backend   # Mount backend code
+      - ./Basic\ Ecomerce/:/app/backend   # Mount backend code (escape space)
     environment:
       MONGO_URL: mongodb://admin:password@mongo-ci:27017/funfusion?authSource=admin
       PORT: 5050
@@ -37,17 +37,16 @@ services:
     container_name: frontend-ci
     working_dir: /app/frontend
     volumes:
-      - ./frontend:/app/frontend   # Mount frontend code
+      - ./frontend/ToyStore:/app/frontend   # Mount frontend code
     command: >
       sh -c "
       npm install &&
       npm run dev -- --host
       "
     ports:
-      - "5175:5173"     # Changed port for CI
+      - "5175:5173"     # CI frontend port
     depends_on:
       - backend-ci
 
 volumes:
   mongo_data:
-
