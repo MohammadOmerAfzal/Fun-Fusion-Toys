@@ -10,7 +10,7 @@ pipeline {
 
         stage('Build & Run Website') {
             steps {
-                sh 'docker-compose up -d --build'
+                sh 'docker compose up -d --build'
             }
         }
 
@@ -34,14 +34,14 @@ pipeline {
 
         stage('Teardown Website') {
             steps {
-                sh 'docker-compose down'
+                sh 'docker compose down'
             }
         }
     }
 
     post {
         always {
-            sh 'docker-compose down || true'
+            sh 'docker compose down || true'
         }
     }
 }
