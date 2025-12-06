@@ -21,7 +21,6 @@ pipeline {
         stage('Stop Previous Containers') {
             steps {
                 sh '''
-                cd Fun-Fusion-Toys
                 docker compose down || true
                 '''
             }
@@ -30,7 +29,6 @@ pipeline {
         stage('Start CI Containers') {
             steps {
                 sh '''
-                cd Fun-Fusion-Toys
                 docker compose up -d --build
                 '''
             }
