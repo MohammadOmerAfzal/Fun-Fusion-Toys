@@ -21,6 +21,7 @@ pipeline {
         stage('Stop Previous Containers') {
             steps {
                 sh '''
+                cd Fun-Fusion-Toys
                 docker compose down || true
                 '''
             }
@@ -29,6 +30,7 @@ pipeline {
         stage('Start CI Containers') {
             steps {
                 sh '''
+                cd Fun-Fusion-Toys
                 docker compose up -d --build
                 '''
             }
@@ -37,7 +39,7 @@ pipeline {
         stage('Run Selenium Tests') {
             steps {
                 sh '''
-                cd FunFusion-Selenium-Tests
+                cd FunFusionToys_SeleniumTestCases
                 python3 -m venv venv
                 source venv/bin/activate
                 pip install -r requirements.txt
