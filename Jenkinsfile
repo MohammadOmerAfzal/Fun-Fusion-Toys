@@ -40,7 +40,7 @@ pipeline {
         // Run Selenium tests using test_main.py
         stage('Run Selenium Tests') {
             steps {
-                sh 'docker run --network host --rm selenium-tests:latest pytest test_main.py'
+                sh 'docker run --network host --rm selenium-tests:latest pytest test'
             }
         }
 
