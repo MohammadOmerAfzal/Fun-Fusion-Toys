@@ -55,9 +55,8 @@ services:
       BASE_URL: http://backend-ci:5050
     depends_on:
       - backend-ci
-    # Optionally, to see browser GUI for debugging (requires X11 or VNC):
-    # ports:
-    #   - "4444:4444"
+    ports:
+       - "4444:4444"
 
 volumes:
   mongo_data:
