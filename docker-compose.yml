@@ -52,7 +52,7 @@ services:
     build: ./selenium-tests
     container_name: selenium-ci
     environment:
-      BASE_URL: http://backend-ci:5050
+      BASE_URL: http://3.214.127.147:5050
     depends_on:
       - backend-ci
     ports:
