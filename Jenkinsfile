@@ -33,6 +33,16 @@ pipeline {
                 '''
             }
         }
+        stage('Wait for Services to be Ready') {
+            steps {
+                sh '''
+                # Wait for services to be fully up (adjust timing as needed)
+                sleep 30
+                # Optional: Check if services are responding
+                curl --retry 10 --retry-delay 5 --retry-connrefused http://localhost:3000 || true
+                '''
+            }
+        }
 
         stage('Run Selenium Tests') {
             steps {
