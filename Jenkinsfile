@@ -10,7 +10,7 @@ pipeline {
 
         stage('Clone Selenium Tests Repo') {
             steps {
-                git branch: 'main', url: 'https://github.com/MohammadOmerAfzal/Fun-FusionToys_SeleniumTestCases.git'
+                git branch: 'main', url: 'https://github.com/MohammadOmerAfzal/FunFusionToys_SeleniumTestCases.git'
             }
         }
 
