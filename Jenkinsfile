@@ -1,16 +1,17 @@
 pipeline {
     agent any
 
+    environment {
+        BASE_URL = "http://backend-ci:5050"
+    }
+
     stages {
 
-        /* -----------------------------
-           1) CLEAN PREVIOUS CI RUN
-        ------------------------------ */
         stage('Cleanup Previous Run') {
             steps {
                 script {
                     sh '''
-                        docker rm -f mongo-ci backend-ci frontend-ci 2>/dev/null || true
+                        docker rm -f mongo-ci backend-ci frontend-ci selenium-ci 2>/dev/null || true
                         docker network prune -f 2>/dev/null || true
                     '''
                     cleanWs(cleanWhenNotBuilt: false, deleteDirs: true)
@@ -18,9 +19,6 @@ pipeline {
             }
         }
 
-        /* -----------------------------
-           2) CLONE WEBSITE
-        ------------------------------ */
         stage('Clone Website') {
             steps {
                 dir('website') {
@@ -29,100 +27,46 @@ pipeline {
             }
         }
 
-        /* -----------------------------
-           3) START WEBSITE & VERIFY
-        ------------------------------ */
-        stage('Start Website') {
+        stage('Start All Services') {
             steps {
                 dir('website') {
                     sh '''
+                        echo "=== Starting all services via docker-compose ==="
                         docker compose up -d --build
-
-                        echo "Waiting for services to start..."
+                        echo "Waiting 40s for services..."
                         sleep 40
-
                         echo "Running containers:"
                         docker ps
-
-                        echo "Backend logs (last 20 lines):"
-                        docker logs backend-ci --tail 20 2>/dev/null || echo "Backend logs not available"
-
-                        echo "Checking backend on port 5050..."
-                        if curl -s -f http://localhost:5050 > /dev/null 2>&1; then
-                            echo "✓ Backend available"
-                        else
-                            echo "Backend not responding on 5050"
-                        fi
                     '''
                 }
             }
         }
 
-        /* -----------------------------
-           4) CLONE & BUILD SELENIUM TEST IMAGE
-        ------------------------------ */
-        stage('Clone & Build Tests') {
-            steps {
-                dir('selenium-tests') {
-                    git branch: 'main', url: 'https://github.com/MohammadOmerAfzal/FunFusionToys_SeleniumTestCases.git'
-
-                    sh '''
-                        echo "=== Building Selenium Test Image ==="
-                        docker build --no-cache -t selenium-ci-tests:latest .
-                    '''
-                }
-            }
-        }
-
-        /* -----------------------------
-           5) DEBUG: VERIFY TEST FILES
-        ------------------------------ */
-        stage('Debug Test Files Inside Docker Image') {
-            steps {
-                sh '''
-                    echo "=== DEBUG: /app/test CONTENTS ==="
-                    docker run --rm selenium-ci-tests:latest sh -c "ls -R /app/test"
-                '''
-            }
-        }
-
-        /* -----------------------------
-           6) RUN SELENIUM TEST SUITE
-        ------------------------------ */
         stage('Run Selenium Tests') {
             steps {
-                script {
-                    def urls = ["http://localhost:5050", "http://localhost:5175", "http://localhost:3000"]
-                    for (url in urls) {
-                        echo "=== Running Selenium Tests on BASE_URL=${url} ==="
-                        sh """
-                            docker run --network host --rm \
-                                -e BASE_URL=${url} \
-                                selenium-ci-tests:latest
-                        """
-                    }
+                dir('website') {
+                    sh '''
+                        echo "=== Running Selenium tests via docker-compose ==="
+                        docker compose run --rm \
+                            -e BASE_URL=${BASE_URL} \
+                            selenium-ci
+                    '''
                 }
             }
         }
 
-        /* -----------------------------
-           7) CLEANUP CI CONTAINERS
-        ------------------------------ */
         stage('Cleanup') {
             steps {
-                sh '''
-                    echo "=== Cleaning CI Containers ==="
-                    docker rm -f mongo-ci backend-ci frontend-ci 2>/dev/null || true
-
-                    echo "⚠ NOT REMOVING selenium-ci-tests:latest (for debugging)"
-                '''
+                dir('website') {
+                    sh '''
+                        echo "=== Stopping all containers ==="
+                        docker compose down
+                    '''
+                }
             }
         }
     }
 
-    /* -----------------------------
-       POST PIPELINE ACTIONS
-    ------------------------------ */
     post {
         always {
             echo "=== Pipeline Completed ==="
@@ -135,4 +79,3 @@ pipeline {
         }
     }
 }
-
