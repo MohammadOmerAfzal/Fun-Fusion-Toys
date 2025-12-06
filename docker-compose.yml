@@ -47,6 +47,12 @@ services:
       - "5175:5173"     # CI frontend port
     depends_on:
       - backend-ci
-
+  selenium-ci:
+    image: selenium/standalone-chrome:latest
+    container_name: selenium-ci
+    ports:
+      - "4444:4444"
+    depends_on:
+      - frontend-ci
 volumes:
   mongo_data:
