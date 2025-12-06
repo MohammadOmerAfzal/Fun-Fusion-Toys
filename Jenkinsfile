@@ -1,5 +1,6 @@
 pipeline {
     agent any
+
     stages {
         stage('Clean Workspace') {
             steps {
@@ -7,7 +8,6 @@ pipeline {
             }
         }
 
-    stages {
         stage('Clone Website Repo') {
             steps {
                 git branch: 'master', url: 'https://github.com/MohammadOmerAfzal/Fun-Fusion-Toys.git'
