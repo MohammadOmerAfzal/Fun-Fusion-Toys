@@ -110,35 +110,43 @@ pipeline {
                 sh '''
                 echo "=== Performing health checks ==="
                 
-                # Method 1: Try from host (if ports are mapped)
+                # IMPORTANT: Frontend is on port 5175, not 3000
+                # Backend is on port 5050, not 5000
+                
                 echo "Trying to access from host..."
-                if curl -s -f --max-time 10 http://localhost:3000 > /dev/null; then
-                    echo "✓ Frontend is accessible on localhost:3000"
+                
+                # Check frontend on port 5175
+                if curl -s -f --max-time 10 http://localhost:5175 > /dev/null; then
+                    echo "✓ Frontend is accessible on localhost:5175"
                 else
-                    echo "✗ Frontend not accessible on localhost:3000"
+                    echo "✗ Frontend not accessible on localhost:5175"
                     echo "Trying alternative method..."
                     
                     # Method 2: Get container IP and try from host network
                     FRONTEND_IP=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' frontend-ci 2>/dev/null || echo "")
                     if [ -n "$FRONTEND_IP" ]; then
                         echo "Frontend container IP: $FRONTEND_IP"
-                        if curl -s -f --max-time 10 http://$FRONTEND_IP:3000 > /dev/null; then
-                            echo "✓ Frontend is accessible on container IP"
+                        if curl -s -f --max-time 10 http://$FRONTEND_IP:5173 > /dev/null; then
+                            echo "✓ Frontend is accessible on container IP:5173"
                         fi
                     fi
                     
                     # Method 3: Try from within container network
                     echo "Testing from within container network..."
-                    docker compose exec -T frontend-ci sh -c 'curl -s -f http://localhost:3000 > /dev/null && echo "✓ Frontend responding internally" || echo "✗ Frontend not responding internally"'
+                    docker compose exec -T frontend-ci sh -c 'curl -s -f http://localhost:5173 > /dev/null && echo "✓ Frontend responding internally on port 5173" || echo "✗ Frontend not responding internally on port 5173"'
                 fi
                 
-                # Check backend
+                # Check backend on port 5050
                 echo "Checking backend..."
-                if curl -s -f --max-time 10 http://localhost:5000 > /dev/null; then
-                    echo "✓ Backend is accessible on localhost:5000"
+                if curl -s -f --max-time 10 http://localhost:5050 > /dev/null; then
+                    echo "✓ Backend is accessible on localhost:5050"
+                    
+                    # Check backend health endpoint if it exists
+                    echo "Checking backend health endpoint..."
+                    curl -s http://localhost:5050/api/health || curl -s http://localhost:5050/health || echo "No specific health endpoint found"
                 else
-                    echo "✗ Backend not accessible on localhost:5000"
-                    docker compose exec -T backend-ci sh -c 'curl -s -f http://localhost:5000 > /dev/null && echo "✓ Backend responding internally" || echo "✗ Backend not responding internally"'
+                    echo "✗ Backend not accessible on localhost:5050"
+                    docker compose exec -T backend-ci sh -c 'curl -s -f http://localhost:5050 > /dev/null && echo "✓ Backend responding internally on port 5050" || echo "✗ Backend not responding internally on port 5050"'
                 fi
                 
                 # Show port mappings
@@ -157,7 +165,9 @@ pipeline {
                     
                     # Create and activate virtual environment
                     python3 -m venv venv
-                    source venv/bin/activate
+                    
+                    # Use . instead of source for sh compatibility
+                    . venv/bin/activate
                     
                     # Upgrade pip and install dependencies
                     pip install --upgrade pip
@@ -177,6 +187,11 @@ pipeline {
                     # Show test file for debugging
                     echo "=== Test file content (first 50 lines) ==="
                     head -50 test/test_main.py || echo "Could not read test file"
+                    
+                    # Check what URL the tests are trying to access
+                    echo "=== Checking test configuration ==="
+                    grep -n "localhost" test/test_main.py || echo "No localhost found in test file"
+                    grep -n "http://" test/test_main.py || echo "No URLs found in test file"
                     '''
                 }
             }
@@ -187,33 +202,37 @@ pipeline {
                 dir('selenium-tests') {
                     sh '''
                     echo "=== Running Selenium Tests ==="
-                    source venv/bin/activate
                     
-                    # Determine the URL to test
-                    FRONTEND_URL="http://localhost:3000"
+                    # Activate virtual environment
+                    . venv/bin/activate
+                    
+                    # Determine the URL to test - FRONTEND IS ON PORT 5175
+                    FRONTEND_URL="http://localhost:5175"
+                    
+                    echo "Testing URL: $FRONTEND_URL"
+                    echo "Note: Frontend is running on port 5175 (not 3000)"
                     
                     # Check if frontend is accessible
-                    if curl -s -f --max-time 5 http://localhost:3000 > /dev/null; then
-                        echo "Using localhost:3000 for tests"
+                    if curl -s -f --max-time 5 http://localhost:5175 > /dev/null; then
+                        echo "Frontend is accessible at $FRONTEND_URL"
                     else
+                        echo "WARNING: Frontend not accessible at $FRONTEND_URL"
+                        echo "Checking container directly..."
+                        
                         # Try to get container IP
                         FRONTEND_IP=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' frontend-ci 2>/dev/null || echo "")
                         if [ -n "$FRONTEND_IP" ]; then
-                            FRONTEND_URL="http://$FRONTEND_IP:3000"
-                            echo "Using container IP: $FRONTEND_URL"
-                        else
-                            echo "WARNING: Could not determine frontend URL"
-                            FRONTEND_URL="http://frontend-ci:3000"
-                            echo "Using service name: $FRONTEND_URL"
+                            FRONTEND_URL="http://$FRONTEND_IP:5173"
+                            echo "Trying container IP: $FRONTEND_URL"
                         fi
                     fi
                     
-                    echo "Testing URL: $FRONTEND_URL"
-                    
                     # Export URL for tests to use
                     export FRONTEND_URL
+                    echo "Using URL for tests: $FRONTEND_URL"
                     
                     # Run tests with timeout
+                    echo "Starting test execution..."
                     timeout 300 python test/test_main.py
                     '''
                 }
