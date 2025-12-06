@@ -13,7 +13,7 @@ pipeline {
         stage('Clone Selenium Tests Repo') {
             steps {
                 git credentialsId: '6c5d2448-b572-4d2e-8f3f-69f93514cf75',
-                url: 'https://github.com/MohammadOmerAfzal/FunFusion-Selenium-Tests.git',
+                url: 'https://github.com/MohammadOmerAfzal/FunFusionToys_SeleniumTestCases',
                 branch: 'main'
             }
         }
