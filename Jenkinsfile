@@ -26,15 +26,14 @@ pipeline {
 
         stage('Build Selenium Test Image') {
             steps {
-                dir('selenium-tests') {
-                    sh 'docker build -t selenium-tests:latest .'
-                }
+                // Build Selenium Docker image directly in workspace (Dockerfile, requirements.txt, test/)
+                sh 'docker build -t selenium-tests:latest .'
             }
         }
 
         stage('Run Selenium Tests') {
             steps {
-                // Run tests on the same Docker network
+                // Run Selenium tests on the same Docker network
                 sh 'docker run --network ci-network --rm selenium-tests:latest'
             }
         }
