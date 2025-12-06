@@ -76,7 +76,6 @@ pipeline {
 
         /* -----------------------------
            5) DEBUG: VERIFY TEST FILES
-           (Checks /app/test inside image)
         ------------------------------ */
         stage('Debug Test Files Inside Docker Image') {
             steps {
@@ -89,26 +88,20 @@ pipeline {
 
         /* -----------------------------
            6) RUN SELENIUM TEST SUITE
-           (Uses your custom test_main.py)
         ------------------------------ */
         stage('Run Selenium Tests') {
             steps {
-                sh '''
-                    echo "=== Running Selenium Tests Using test_main.py ==="
-
-                    # Try backend → frontend → fallback
-                    docker run --network host --rm \
-                        -e BASE_URL="http://localhost:5050" \
-                        selenium-ci-tests:latest || \
-
-                    docker run --network host --rm \
-                        -e BASE_URL="http://localhost:5175" \
-                        selenium-ci-tests:latest || \
-
-                    docker run --network host --rm \
-                        -e BASE_URL="http://localhost:3000" \
-                        selenium-ci-tests:latest
-                '''
+                script {
+                    def urls = ["http://localhost:5050", "http://localhost:5175", "http://localhost:3000"]
+                    for (url in urls) {
+                        echo "=== Running Selenium Tests on BASE_URL=${url} ==="
+                        sh """
+                            docker run --network host --rm \
+                                -e BASE_URL=${url} \
+                                selenium-ci-tests:latest
+                        """
+                    }
+                }
             }
         }
 
@@ -142,3 +135,4 @@ pipeline {
         }
     }
 }
+
