@@ -2,63 +2,94 @@ pipeline {
     agent any
 
     stages {
-        stage('Clean & Setup') {
+        stage('Cleanup Previous Run') {
             steps {
-                cleanWs()
-                sh '''
-                    # Clean ONLY CI containers
-                    docker rm -f mongo-ci backend-ci frontend-ci 2>/dev/null || true
-                '''
+                script {
+                    // Clean up containers first
+                    sh '''
+                        docker rm -f mongo-ci backend-ci frontend-ci 2>/dev/null || true
+                        docker network prune -f 2>/dev/null || true
+                    '''
+                    
+                    // Clean workspace with force if needed
+                    cleanWs(cleanWhenNotBuilt: false, deleteDirs: true)
+                }
             }
         }
 
-        stage('Clone & Run Website') {
+        stage('Clone Website') {
             steps {
                 dir('website') {
                     git branch: 'master', url: 'https://github.com/MohammadOmerAfzal/Fun-Fusion-Toys.git'
-                    
+                }
+            }
+        }
+
+        stage('Start Website') {
+            steps {
+                dir('website') {
                     sh '''
-                        docker compose down 2>/dev/null || true
+                        # Start the website
                         docker compose up -d --build
-                        sleep 30  # Wait for services to start
                         
-                        # Verify containers are running
-                        echo "=== Running containers ==="
+                        # Wait for services
+                        echo "Waiting for services to start..."
+                        sleep 40
+                        
+                        # Check containers
+                        echo "Running containers:"
                         docker ps
                         
-                        # Test the actual port (5050 based on your output)
-                        echo "=== Testing backend on port 5050 ==="
-                        curl -f http://localhost:5050 || \
-                        echo "Trying other common ports..." && \
-                        curl -f http://localhost:8000 || \
-                        curl -f http://localhost:3000 || \
-                        curl -f http://localhost:5000
+                        # Check backend logs
+                        echo "Backend logs (last 20 lines):"
+                        docker logs backend-ci --tail 20 2>/dev/null || echo "Could not get backend logs"
                         
-                        # Also check if there's a health endpoint
-                        echo "=== Checking service health ==="
-                        curl -s http://localhost:5050 || curl -s http://localhost:5050/health || curl -s http://localhost:5050/api
+                        # Test connectivity
+                        echo "Testing backend on port 5050..."
+                        if curl -s -f http://localhost:5050 > /dev/null 2>&1; then
+                            echo "✓ Backend is responding on port 5050"
+                        else
+                            echo "Backend not responding on 5050, checking frontend..."
+                            if curl -s -f http://localhost:5175 > /dev/null 2>&1; then
+                                echo "✓ Frontend is responding on port 5175"
+                            else
+                                echo "Warning: Services might still be starting"
+                            fi
+                        fi
                     '''
                 }
             }
         }
 
-        stage('Run Tests') {
+        stage('Clone & Build Tests') {
             steps {
                 dir('selenium-tests') {
                     git branch: 'main', url: 'https://github.com/MohammadOmerAfzal/FunFusionToys_SeleniumTestCases.git'
+                    sh 'docker build -t selenium-ci-tests:latest .'
+                }
+            }
+        }
+
+        stage('Run Selenium Tests') {
+            steps {
+                script {
                     sh '''
-                        # Build test image
-                        docker build -t selenium-ci-tests:latest .
+                        echo "=== Running Selenium Tests ==="
                         
-                        # Run tests against the correct port (5050)
-                        echo "=== Running Selenium tests against backend on port 5050 ==="
+                        # Try different URLs for testing
+                        echo "Trying backend on port 5050..."
                         docker run --network host --rm \
                             -e BASE_URL="http://localhost:5050" \
                             selenium-ci-tests:latest || \
                         
-                        echo "=== Trying frontend on port 5175 ==="
+                        echo "Trying frontend on port 5175..."
                         docker run --network host --rm \
                             -e BASE_URL="http://localhost:5175" \
+                            selenium-ci-tests:latest || \
+                        
+                        echo "Trying alternative ports..."
+                        docker run --network host --rm \
+                            -e BASE_URL="http://localhost:3000" \
                             selenium-ci-tests:latest
                     '''
                 }
@@ -68,27 +99,37 @@ pipeline {
         stage('Cleanup') {
             steps {
                 sh '''
-                    # Clean only CI containers
+                    echo "=== Cleaning up CI resources ==="
+                    
+                    # Stop and remove CI containers
                     docker rm -f mongo-ci backend-ci frontend-ci 2>/dev/null || true
+                    
+                    # Remove test image
                     docker rmi selenium-ci-tests:latest 2>/dev/null || true
                     
                     echo "=== Main projects should still be running ==="
-                    docker ps | grep -v ci
+                    docker ps | grep -v ci || echo "No containers with 'ci' in name"
                 '''
             }
         }
     }
-    
+
     post {
         always {
-            echo "=== Final cleanup ==="
-            sh '''
-                docker rm -f mongo-ci backend-ci frontend-ci 2>/dev/null || true
-                docker rmi selenium-ci-tests:latest 2>/dev/null || true
-                
-                echo "Remaining containers:"
-                docker ps
-            '''
+            script {
+                echo "=== Pipeline completed ==="
+                sh '''
+                    # Final cleanup
+                    docker rm -f mongo-ci backend-ci frontend-ci 2>/dev/null || true
+                    docker rmi selenium-ci-tests:latest 2>/dev/null || true
+                '''
+            }
+        }
+        success {
+            echo '✅ Pipeline completed successfully!'
+        }
+        failure {
+            echo '❌ Pipeline failed!'
         }
     }
 }
