@@ -18,7 +18,7 @@ services:
     container_name: backend-ci
     working_dir: /app/backend
     volumes:
-      - "./Basic Ecomerce:/app/backend"   # Mount backend code (escape space)
+      - "./Basic Ecomerce:/app/backend"   # Mount backend code
     environment:
       MONGO_URI_DOCKER: mongodb://admin:password@mongo-ci:27017/ecommerce?authSource=admin
       PORT: 5050
@@ -47,5 +47,17 @@ services:
       - "5175:5173"     # CI frontend port
     depends_on:
       - backend-ci
+
+  selenium-ci:
+    build: ./selenium-tests
+    container_name: selenium-ci
+    environment:
+      BASE_URL: http://backend-ci:5050
+    depends_on:
+      - backend-ci
+    # Optionally, to see browser GUI for debugging (requires X11 or VNC):
+    # ports:
+    #   - "4444:4444"
+
 volumes:
   mongo_data:
