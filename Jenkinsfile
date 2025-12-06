@@ -24,6 +24,19 @@ pipeline {
             }
         }
 
+        stage('Cleanup Previous Containers') {
+            steps {
+                script {
+                    // Stop and remove any existing containers and network
+                    sh '''
+                        docker compose -f website/docker-compose.yml down || true
+                        docker rm -f mongo-ci web || true
+                        docker network rm ci-network || true
+                    '''
+                }
+            }
+        }
+
         stage('Build & Run Website') {
             steps {
                 dir('website') {
@@ -40,9 +53,16 @@ pipeline {
             steps {
                 script {
                     // Wait for the web service to be healthy
-                    sleep 30
-                    // Optional: Add a health check using curl
-                    sh 'docker exec $(docker ps -qf "name=web") curl -f http://localhost:8000 || true'
+                    sleep 10
+                    // Check if containers are running
+                    sh '''
+                        echo "Checking container status..."
+                        docker ps
+                        echo "Waiting for web service to be ready..."
+                        sleep 20
+                    '''
+                    // Try to check web service health
+                    sh 'curl -f http://localhost:8000 || echo "Web service might still be starting"'
                 }
             }
         }
@@ -58,8 +78,15 @@ pipeline {
 
         stage('Run Selenium Tests') {
             steps {
-                // Run Selenium tests on the same Docker network
-                sh 'docker run --network ci-network --rm selenium-tests:latest'
+                script {
+                    // Run Selenium tests on the same Docker network
+                    // Get the web container IP for testing
+                    sh '''
+                        WEB_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' web)
+                        echo "Web container IP: $WEB_IP"
+                        docker run --network ci-network --rm selenium-tests:latest
+                    '''
+                }
             }
         }
 
@@ -78,13 +105,19 @@ pipeline {
         always {
             // Always cleanup, even if tests fail
             script {
-                dir('website') {
-                    sh 'docker compose down || true'
-                }
-                sh 'docker network rm ci-network || true'
-                // Clean up Docker images to save space
-                sh 'docker rmi selenium-tests:latest || true'
+                sh '''
+                    echo "Cleaning up containers and network..."
+                    docker compose -f website/docker-compose.yml down || true
+                    docker network rm ci-network || true
+                    docker rmi selenium-tests:latest || true
+                '''
             }
+        }
+        success {
+            echo 'Pipeline completed successfully!'
+        }
+        failure {
+            echo 'Pipeline failed!'
         }
     }
 }
