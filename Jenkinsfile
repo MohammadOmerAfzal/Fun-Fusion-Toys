@@ -75,7 +75,7 @@ pipeline {
                         echo "=== Starting Selenium Chrome container ==="
 
                         docker run -d --name selenium-node-ci --network ci-network \
-                            selenium/standalone-chrome:4.18.1
+                            selenium/standalone-chrome:latest
 
                         echo "Waiting for Selenium to be ready..."
                         for i in {1..40}; do
