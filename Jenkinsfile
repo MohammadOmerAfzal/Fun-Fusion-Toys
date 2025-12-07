@@ -76,17 +76,21 @@ pipeline {
                         docker run -d --name selenium-node-ci --network ci-network \\
                             --shm-size=2g \\
                             selenium/standalone-chrome:121.0
-
+                        
                         echo "Waiting for Selenium to be ready..."
-                        for i in {1..40}; do
-                            if curl -s http://selenium-node-ci:4444/status | grep -q '"ready":'; then
-                                echo "✓ Selenium ready"
+                        for i in {1..60}; do
+                            if curl -s http://selenium-node-ci:4444/wd/hub/status 2>/dev/null | grep -q '\\"ready\\":true'; then
+                                echo "✓ Selenium WebDriver ready"
+                                sleep 3
                                 break
                             fi
-                            echo "Waiting..."
+                            echo "Waiting... (attempt \$i/60)"
                             sleep 2
                         done
-
+                        
+                        echo "=== Verifying Selenium status ==="
+                        curl -s http://selenium-node-ci:4444/wd/hub/status || true
+                        
                         echo "=== Running tests ==="
                         docker run --rm --network ci-network \\
                             -e BASE_URL=http://frontend-ci:5173 \\
