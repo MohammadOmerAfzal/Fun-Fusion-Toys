@@ -3,6 +3,7 @@ pipeline {
 
     stages {
 
+        // ------------------ Clone Main Website Repo ------------------ //
         stage('Clone Website Repository') {
             steps {
                 echo "Cloning main website repository..."
@@ -10,6 +11,7 @@ pipeline {
             }
         }
 
+        // ------------------ Stop Previous Containers ------------------ //
         stage('Stop Previous Containers') {
             steps {
                 echo "Stopping previous containers if any..."
@@ -17,6 +19,7 @@ pipeline {
             }
         }
 
+        // ------------------ Start Website Containers ------------------ //
         stage('Start Website Containers') {
             steps {
                 echo "Building and starting website containers..."
@@ -24,12 +27,14 @@ pipeline {
             }
         }
 
+        // ------------------ Verify Containers ------------------ //
         stage('Verify Website Containers') {
             steps {
                 sh 'docker ps'
             }
         }
 
+        // ------------------ Clone Selenium Tests Repo ------------------ //
         stage('Clone Selenium Test Repository') {
             steps {
                 echo "Cloning Selenium test repository..."
@@ -40,6 +45,7 @@ pipeline {
             }
         }
 
+        // ------------------ Wait for Frontend ------------------ //
         stage('Wait for Frontend') {
             steps {
                 echo "Waiting for frontend to be ready..."
@@ -56,14 +62,43 @@ pipeline {
             }
         }
 
+        // ------------------ Run Selenium Tests ------------------ //
         stage('Build & Run Selenium Tests') {
             steps {
                 echo "Building and running Selenium tests container..."
                 sh 'docker compose build selenium-tests'
-                sh 'docker compose run --rm selenium-tests'
+                sh 'docker compose run --rm selenium-tests > test_results.log 2>&1 || true'
             }
         }
 
+        // ------------------ Get Last Committer Email ------------------ //
+        stage('Get Last Committer Email') {
+            steps {
+                script {
+                    // Fetch email of the last person who committed to the main website repo
+                    env.COMMITTER_EMAIL = sh(
+                        script: "git log -1 --pretty=format:'%ae'",
+                        returnStdout: true
+                    ).trim()
+                    echo "Last committer email: ${env.COMMITTER_EMAIL}"
+                }
+            }
+        }
+
+        // ------------------ Send Test Results Email ------------------ //
+        stage('Send Email') {
+            steps {
+                script {
+                    // Ensure Email Extension Plugin is installed and SMTP configured in Jenkins
+                    emailext(
+                        subject: "🎯 Selenium Test Results for ${env.JOB_NAME}",
+                        body: """<pre>${readFile('test_results.log')}</pre>""",
+                        to: "${env.COMMITTER_EMAIL}"
+                    )
+                    echo "✅ Email sent to ${env.COMMITTER_EMAIL}"
+                }
+            }
+        }
     }
 
     post {
