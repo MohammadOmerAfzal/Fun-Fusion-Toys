@@ -12,13 +12,21 @@ services:
       - mongo_data:/data/db
     ports:
       - "27018:27017"
+    networks:
+      - default
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')", "-u", "admin", "-p", "password"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   backend-ci:
     image: node:20
     container_name: backend-ci
     working_dir: /app/backend
     volumes:
-      - "./Basic Ecomerce:/app/backend"   # Mount backend code
+      - "./Basic Ecomerce:/app/backend"
     environment:
       MONGO_URI_DOCKER: mongodb://admin:password@mongo-ci:27017/ecommerce?authSource=admin
       PORT: 5050
@@ -30,23 +38,41 @@ services:
     ports:
       - "5050:5050"
     depends_on:
-      - mongo-ci
+      mongo-ci:
+        condition: service_healthy
+    networks:
+      - default
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:5050', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
   frontend-ci:
     image: node:20
     container_name: frontend-ci
     working_dir: /app/frontend
     volumes:
-      - ./frontend/ToyStore:/app/frontend   # Mount frontend code
+      - ./frontend/ToyStore:/app/frontend
+    environment:
+      VITE_API_URL: http://backend-ci:5050
     command: >
       sh -c "
       npm install &&
-      npm run dev -- --host
+      npm run dev -- --host 0.0.0.0
       "
     ports:
-      - "5175:5173"     # CI frontend port
+      - "5175:5173"
     depends_on:
-      - backend-ci
+      backend-ci:
+        condition: service_healthy
+    networks:
+      - default
 
 volumes:
   mongo_data:
+
+networks:
+  default:
+    driver: bridge
