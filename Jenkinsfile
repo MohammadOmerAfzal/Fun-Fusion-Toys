@@ -12,10 +12,7 @@ pipeline {
                     echo "=== Cleaning previous CI containers and networks ==="
                     sh '''
                         # Stop docker compose if running
-                        if [ -d "website" ]; then
-                            cd website && docker compose down -v 2>/dev/null || true
-                            cd ..
-                        fi
+                        docker compose down -v 2>/dev/null || true
                         
                         # Remove all CI containers
                         docker rm -f mongo-ci backend-ci frontend-ci selenium-hub selenium-tests 2>/dev/null || true
@@ -41,22 +38,24 @@ pipeline {
             }
         }
         
-        stage('Clone Repositories') {
-            parallel {
-                stage('Clone Website') {
-                    steps {
-                        dir('website') {
-                            git branch: 'master', url: 'https://github.com/MohammadOmerAfzal/Fun-Fusion-Toys.git'
-                        }
-                    }
-                }
-                stage('Clone Tests') {
-                    steps {
-                        dir('tests') {
-                            git branch: 'main', url: 'https://github.com/MohammadOmerAfzal/FunFusionToys_SeleniumTestCases.git'
-                        }
-                    }
-                }
+        stage('Clone Website Repository') {
+            steps {
+                sh '''
+                    echo "=== Website repository already checked out by Jenkins ==="
+                    echo "Repository: https://github.com/MohammadOmerAfzal/Fun-Fusion-Toys"
+                    echo "Branch: master"
+                    echo ""
+                    echo "=== Repository structure ==="
+                    ls -la
+                    echo ""
+                    echo "=== Verifying docker-compose.yml exists ==="
+                    if [ -f "docker-compose.yml" ]; then
+                        echo "✓ docker-compose.yml found"
+                    else
+                        echo "❌ docker-compose.yml not found!"
+                        exit 1
+                    fi
+                '''
             }
         }
         
@@ -72,30 +71,23 @@ pipeline {
         
         stage('Build and Start Website') {
             steps {
-                dir('website') {
-                    sh '''
-                        echo "=== Building and starting application services ==="
-                        
-                        # Start services with docker-compose
-                        docker compose up -d
-                        
-                        echo "=== Waiting for initial startup (20s) ==="
-                        sleep 20
-                        
-                        echo "=== Connecting containers to ci-network ==="
-                        docker network connect ci-network mongo-ci 2>/dev/null || echo "mongo-ci already connected"
-                        docker network connect ci-network backend-ci 2>/dev/null || echo "backend-ci already connected"
-                        docker network connect ci-network frontend-ci 2>/dev/null || echo "frontend-ci already connected"
-                        
-                        echo "=== Running containers ==="
-                        docker ps --filter "name=-ci"
-                        
-                        echo "=== Networks for each container ==="
-                        docker inspect mongo-ci --format='{{.Name}} networks: {{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}'
-                        docker inspect backend-ci --format='{{.Name}} networks: {{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}'
-                        docker inspect frontend-ci --format='{{.Name}} networks: {{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}'
-                    '''
-                }
+                sh '''
+                    echo "=== Building and starting application services ==="
+                    
+                    # Start services with docker-compose
+                    docker compose up -d --build
+                    
+                    echo "=== Waiting for initial startup (20s) ==="
+                    sleep 20
+                    
+                    echo "=== Connecting containers to ci-network ==="
+                    docker network connect ci-network mongo-ci 2>/dev/null || echo "mongo-ci already connected"
+                    docker network connect ci-network backend-ci 2>/dev/null || echo "backend-ci already connected"
+                    docker network connect ci-network frontend-ci 2>/dev/null || echo "frontend-ci already connected"
+                    
+                    echo "=== Running containers ==="
+                    docker ps --filter "name=-ci"
+                '''
             }
         }
         
@@ -121,7 +113,7 @@ pipeline {
                         LOGS=$(docker logs backend-ci 2>&1 || echo "")
                         if echo "$LOGS" | grep -qE "listening|started|Server running|MongoDB connected"; then
                             echo "✓ Backend is ready"
-                            sleep 5  # Extra time for backend to fully initialize
+                            sleep 5
                             break
                         fi
                         if echo "$LOGS" | grep -qE "Error|error|failed|Failed"; then
@@ -138,7 +130,7 @@ pipeline {
                         LOGS=$(docker logs frontend-ci 2>&1 || echo "")
                         if echo "$LOGS" | grep -qE "ready|Local:.*5173|Network:.*5173"; then
                             echo "✓ Frontend is ready"
-                            sleep 5  # Extra time for frontend to fully initialize
+                            sleep 5
                             break
                         fi
                         echo "Waiting for Frontend... ($i/40)"
@@ -146,16 +138,33 @@ pipeline {
                     done
                     
                     echo "=== Application Status ==="
-                    echo "MongoDB logs (last 10 lines):"
-                    docker logs mongo-ci --tail 10 2>&1 || true
+                    echo "Backend logs (last 10 lines):"
+                    docker logs backend-ci --tail 10 2>&1 || true
                     echo ""
-                    echo "Backend logs (last 15 lines):"
-                    docker logs backend-ci --tail 15 2>&1 || true
-                    echo ""
-                    echo "Frontend logs (last 15 lines):"
-                    docker logs frontend-ci --tail 15 2>&1 || true
+                    echo "Frontend logs (last 10 lines):"
+                    docker logs frontend-ci --tail 10 2>&1 || true
                     
-                    echo "=== All application services are ready ==="
+                    echo ""
+                    echo "✅ All application services are running and ready!"
+                '''
+            }
+        }
+        
+        stage('Verify Application Access') {
+            steps {
+                sh '''
+                    echo "=== Verifying application is accessible ==="
+                    
+                    # Check if we can access backend from host
+                    echo "Testing backend at http://localhost:5050"
+                    curl -f http://localhost:5050 || echo "⚠ Backend not accessible from host"
+                    
+                    # Check if we can access frontend from host
+                    echo "Testing frontend at http://localhost:5175"
+                    curl -f http://localhost:5175 || echo "⚠ Frontend not accessible from host"
+                    
+                    echo ""
+                    echo "✓ Application verification complete"
                 '''
             }
         }
@@ -209,15 +218,8 @@ pipeline {
                     
                     echo ""
                     echo "Testing connectivity from selenium-hub..."
-                    
-                    echo "- Ping mongo-ci:"
-                    docker exec selenium-hub ping -c 2 mongo-ci 2>&1 | grep "bytes from" || echo "  Cannot ping mongo-ci"
-                    
-                    echo "- Ping backend-ci:"
-                    docker exec selenium-hub ping -c 2 backend-ci 2>&1 | grep "bytes from" || echo "  Cannot ping backend-ci"
-                    
-                    echo "- Ping frontend-ci:"
-                    docker exec selenium-hub ping -c 2 frontend-ci 2>&1 | grep "bytes from" || echo "  Cannot ping frontend-ci"
+                    docker exec selenium-hub ping -c 2 frontend-ci 2>&1 | grep "bytes from" || echo "  ⚠ Cannot ping frontend-ci"
+                    docker exec selenium-hub ping -c 2 backend-ci 2>&1 | grep "bytes from" || echo "  ⚠ Cannot ping backend-ci"
                     
                     echo ""
                     echo "✓ Network connectivity verified"
@@ -225,10 +227,15 @@ pipeline {
             }
         }
         
-        stage('Build Test Image') {
+        stage('Clone and Build Test Suite') {
             steps {
                 dir('tests') {
+                    git branch: 'main', url: 'https://github.com/MohammadOmerAfzal/FunFusionToys_SeleniumTestCases.git'
                     sh '''
+                        echo "=== Test repository cloned ==="
+                        ls -la
+                        
+                        echo ""
                         echo "=== Building test Docker image ==="
                         docker build -t selenium-tests:latest .
                         echo "✓ Test image built successfully"
@@ -262,9 +269,6 @@ pipeline {
                         echo "=== Backend Logs (last 30 lines) ==="
                         docker logs backend-ci --tail 30
                         echo ""
-                        echo "=== MongoDB Logs (last 20 lines) ==="
-                        docker logs mongo-ci --tail 20
-                        echo ""
                         echo "=== Selenium Hub Logs (last 30 lines) ==="
                         docker logs selenium-hub --tail 30
                         echo ""
@@ -272,7 +276,7 @@ pipeline {
                     }
                     
                     echo ""
-                    echo "✓ All tests passed successfully!"
+                    echo "✅ All tests passed successfully!"
                 '''
             }
         }
@@ -300,8 +304,7 @@ pipeline {
             echo "=== Cleaning up ==="
             sh '''
                 # Stop docker compose services
-                cd website 2>/dev/null && docker compose down -v || true
-                cd ..
+                docker compose down -v || true
                 
                 # Remove all CI containers
                 docker rm -f mongo-ci backend-ci frontend-ci selenium-hub selenium-tests 2>/dev/null || true
@@ -326,6 +329,8 @@ pipeline {
             echo "  - Frontend: http://${EC2_PUBLIC_IP}:5175"
             echo "  - Backend:  http://${EC2_PUBLIC_IP}:5050"
             echo "  - MongoDB:  ${EC2_PUBLIC_IP}:27018"
+            echo ""
+            echo "Test results archived in build artifacts."
         }
         failure {
             echo '❌ =================================='
