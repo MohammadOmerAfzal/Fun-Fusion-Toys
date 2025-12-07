@@ -1,27 +1,32 @@
 pipeline {
     agent any
     
+    environment {
+        EC2_PUBLIC_IP = '3.214.127.147'
+    }
+    
     stages {
         stage('Cleanup Previous Run') {
             steps {
                 script {
                     echo "=== Cleaning previous CI containers and networks ==="
                     sh '''
-                        # Stop and remove containers
-                        docker rm -f mongo-ci backend-ci frontend-ci selenium-hub 2>/dev/null || true
+                        # Stop docker compose if running
+                        if [ -d "website" ]; then
+                            cd website && docker compose down 2>/dev/null || true
+                            cd ..
+                        fi
                         
-                        # Remove network (force remove even if containers are attached)
+                        # Remove all CI containers
+                        docker rm -f mongo-ci backend-ci frontend-ci selenium-hub selenium-tests 2>/dev/null || true
+                        
+                        # Remove networks
                         docker network rm ci-network 2>/dev/null || true
                         
-                        # Extra cleanup: remove any dangling networks
+                        # Extra cleanup
                         docker network prune -f || true
                         
-                        # Verify network is gone
-                        if docker network ls | grep -q ci-network; then
-                            echo "Warning: ci-network still exists, forcing removal..."
-                            docker network inspect ci-network -f '{{range .Containers}}{{.Name}} {{end}}' | xargs -r docker rm -f || true
-                            docker network rm ci-network || true
-                        fi
+                        echo "✓ Cleanup completed"
                     '''
                 }
             }
@@ -54,19 +59,91 @@ pipeline {
             }
         }
         
-        stage('Setup Infrastructure') {
+        stage('Create Network') {
             steps {
                 sh '''
-                    echo "=== Creating Docker network ==="
-                    docker network create ci-network || {
-                        echo "Network creation failed, attempting cleanup and retry..."
-                        docker network rm ci-network 2>/dev/null || true
-                        sleep 2
-                        docker network create ci-network
-                    }
+                    echo "=== Creating shared Docker network ==="
+                    docker network create ci-network
+                    echo "✓ Network created"
+                '''
+            }
+        }
+        
+        stage('Build and Start Website') {
+            steps {
+                dir('website') {
+                    sh '''
+                        echo "=== Building and starting application services ==="
+                        
+                        # Update docker-compose.yml to use ci-network
+                        export COMPOSE_PROJECT_NAME=ci
+                        
+                        docker compose up -d --build
+                        
+                        echo "=== Connecting containers to ci-network ==="
+                        docker network connect ci-network mongo-ci 2>/dev/null || true
+                        docker network connect ci-network backend-ci 2>/dev/null || true
+                        docker network connect ci-network frontend-ci 2>/dev/null || true
+                        
+                        echo "=== Running containers ==="
+                        docker ps --filter "name=ci"
+                    '''
+                }
+            }
+        }
+        
+        stage('Wait for Application Ready') {
+            steps {
+                sh '''
+                    echo "=== Waiting for application services to be ready ==="
                     
+                    # Wait for MongoDB
+                    echo "Checking MongoDB..."
+                    for i in $(seq 1 30); do
+                        if docker exec mongo-ci mongosh --eval "db.runCommand({ ping: 1 })" >/dev/null 2>&1; then
+                            echo "✓ MongoDB is ready"
+                            break
+                        fi
+                        echo "Waiting for MongoDB... ($i/30)"
+                        sleep 2
+                    done
+                    
+                    # Wait for Backend
+                    echo "Checking Backend..."
+                    for i in $(seq 1 30); do
+                        if docker exec backend-ci wget -q -O- http://localhost:5050 >/dev/null 2>&1 || \
+                           docker logs backend-ci 2>&1 | grep -q "listening\\|started\\|ready"; then
+                            echo "✓ Backend is ready"
+                            break
+                        fi
+                        echo "Waiting for Backend... ($i/30)"
+                        sleep 2
+                    done
+                    
+                    # Wait for Frontend
+                    echo "Checking Frontend..."
+                    for i in $(seq 1 30); do
+                        if docker exec frontend-ci wget -q -O- http://localhost:5173 >/dev/null 2>&1 || \
+                           docker logs frontend-ci 2>&1 | grep -q "ready\\|Local"; then
+                            echo "✓ Frontend is ready"
+                            break
+                        fi
+                        echo "Waiting for Frontend... ($i/30)"
+                        sleep 2
+                    done
+                    
+                    echo "=== All application services are ready ==="
+                    sleep 5
+                '''
+            }
+        }
+        
+        stage('Start Selenium Grid') {
+            steps {
+                sh '''
                     echo "=== Starting Selenium Grid Hub ==="
-                    docker run -d --name selenium-hub --network ci-network \
+                    docker run -d --name selenium-hub \
+                        --network ci-network \
                         --shm-size=2g \
                         -p 4444:4444 \
                         selenium/standalone-chrome:latest
@@ -74,34 +151,6 @@ pipeline {
                     echo "=== Verifying Selenium Hub started ==="
                     docker ps | grep selenium-hub
                 '''
-            }
-        }
-        
-        stage('Start Application Services') {
-            steps {
-                dir('website') {
-                    sh '''
-                        echo "=== Starting application containers ==="
-                        docker compose up -d --no-build
-                        
-                        echo "=== Waiting for services to be ready ==="
-                        sleep 15
-                        
-                        echo "=== Checking backend health ==="
-                        for i in $(seq 1 20); do
-                            if docker exec backend-ci curl -s http://localhost:5050/health > /dev/null 2>&1 || \
-                               docker exec backend-ci curl -s http://localhost:5050 > /dev/null 2>&1; then
-                                echo "✓ Backend is ready"
-                                break
-                            fi
-                            echo "Waiting for backend... ($i/20)"
-                            sleep 3
-                        done
-                        
-                        echo "=== Running containers ==="
-                        docker ps
-                    '''
-                }
             }
         }
         
@@ -121,7 +170,7 @@ pipeline {
                     done
                     
                     echo "=== Selenium Grid Status ==="
-                    curl -s http://localhost:4444/status || true
+                    curl -s http://localhost:4444/status | python3 -m json.tool || true
                 '''
             }
         }
@@ -132,8 +181,26 @@ pipeline {
                     sh '''
                         echo "=== Building test Docker image ==="
                         docker build -t selenium-tests:latest .
+                        echo "✓ Test image built"
                     '''
                 }
+            }
+        }
+        
+        stage('Verify Network Connectivity') {
+            steps {
+                sh '''
+                    echo "=== Verifying network connectivity ==="
+                    
+                    echo "Containers on ci-network:"
+                    docker network inspect ci-network --format '{{range .Containers}}{{.Name}}: {{.IPv4Address}}{{println}}{{end}}'
+                    
+                    echo "Testing connectivity from selenium-hub to frontend-ci..."
+                    docker exec selenium-hub ping -c 2 frontend-ci || echo "Warning: Cannot ping frontend"
+                    
+                    echo "Testing connectivity from selenium-hub to backend-ci..."
+                    docker exec selenium-hub ping -c 2 backend-ci || echo "Warning: Cannot ping backend"
+                '''
             }
         }
         
@@ -141,10 +208,24 @@ pipeline {
             steps {
                 sh '''
                     echo "=== Running Selenium test suite ==="
-                    docker run --rm --network ci-network \
+                    
+                    docker run --rm --name selenium-tests \
+                        --network ci-network \
                         -e BASE_URL=http://frontend-ci:5173 \
                         -e SELENIUM_HOST=selenium-hub \
-                        selenium-tests:latest
+                        -e SELENIUM_PORT=4444 \
+                        selenium-tests:latest || {
+                        echo "Tests failed! Showing container logs..."
+                        echo "=== Frontend Logs ==="
+                        docker logs frontend-ci --tail 50
+                        echo "=== Backend Logs ==="
+                        docker logs backend-ci --tail 50
+                        echo "=== Selenium Hub Logs ==="
+                        docker logs selenium-hub --tail 50
+                        exit 1
+                    }
+                    
+                    echo "✓ All tests passed!"
                 '''
             }
         }
@@ -154,25 +235,41 @@ pipeline {
         always {
             echo "=== Cleaning up ==="
             sh '''
+                # Get logs before cleanup (for debugging)
+                echo "=== Saving logs ==="
+                docker logs frontend-ci > frontend-ci.log 2>&1 || true
+                docker logs backend-ci > backend-ci.log 2>&1 || true
+                docker logs mongo-ci > mongo-ci.log 2>&1 || true
+                docker logs selenium-hub > selenium-hub.log 2>&1 || true
+                
                 # Stop docker compose services
                 cd website 2>/dev/null && docker compose down || true
+                cd ..
                 
                 # Remove all CI containers
-                docker rm -f mongo-ci backend-ci frontend-ci selenium-hub 2>/dev/null || true
+                docker rm -f mongo-ci backend-ci frontend-ci selenium-hub selenium-tests 2>/dev/null || true
                 
                 # Remove network
                 docker network rm ci-network 2>/dev/null || true
                 
                 # Clean up test image
                 docker rmi selenium-tests:latest 2>/dev/null || true
+                
+                echo "✓ Cleanup completed"
             '''
+            
+            // Archive logs
+            archiveArtifacts artifacts: '*.log', allowEmptyArchive: true
+            
             echo "=== Pipeline Completed ==="
         }
         success {
             echo '✅ All tests passed successfully!'
+            echo "=== Application was accessible at: http://${EC2_PUBLIC_IP}:5173 ==="
         }
         failure {
             echo '❌ Pipeline failed! Check logs above.'
+            echo 'Logs have been archived - check the build artifacts.'
         }
     }
 }
