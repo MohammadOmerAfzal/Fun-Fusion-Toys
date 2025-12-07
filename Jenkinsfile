@@ -3,14 +3,10 @@ pipeline {
 
     stages {
 
-        /* -----------------------------
-            1) CLEAN PREVIOUS CI RUN
-        ------------------------------ */
         stage('Cleanup Previous Run') {
             steps {
                 script {
                     echo "=== Cleaning previous CI containers and networks ==="
-                    // Added selenium-node-ci to the cleanup list
                     sh '''
                         docker rm -f mongo-ci backend-ci frontend-ci selenium-node-ci 2>/dev/null || true
                         docker network prune -f 2>/dev/null || true
@@ -20,9 +16,6 @@ pipeline {
             }
         }
 
-        /* -----------------------------
-            2) CLONE WEBSITE
-        ------------------------------ */
         stage('Clone Website') {
             steps {
                 dir('website') {
@@ -31,9 +24,6 @@ pipeline {
             }
         }
 
-        /* -----------------------------
-            3) CLONE SELENIUM TESTS
-        ------------------------------ */
         stage('Clone Selenium Tests') {
             steps {
                 dir('selenium-tests') {
@@ -42,93 +32,71 @@ pipeline {
             }
         }
 
-        /* -----------------------------
-            4) START WEBSITE SERVICES
-        ------------------------------ */
         stage('Start Website Services') {
             steps {
                 dir('website') {
                     sh '''
-                        echo "=== Starting services via docker-compose ==="
+                        echo "=== Starting Website CI containers ==="
                         docker network create ci-network || true
-                        
-                        # Use --no-build as the selenium-ci service must be removed/ignored.
-                        docker compose up -d --no-build 
 
-                        # Waiting for backend to be ready... (Uses your external IP for Jenkins host check)
+                        docker compose up -d --no-build
+
                         echo "Waiting for backend to be ready..."
                         for i in {1..30}; do
-                            if curl -s -f http://3.214.127.147:5050 > /dev/null 2>&1; then
+                            if curl -s -f http://backend-ci:5050 > /dev/null; then
                                 echo "✓ Backend ready"
                                 break
-                            else
-                                echo "Waiting 2s..."
-                                sleep 2
                             fi
+                            echo "Waiting..."
+                            sleep 2
                         done
 
-                        echo "Current running containers:"
                         docker ps
                     '''
                 }
             }
         }
 
-        /* -----------------------------
-            5) BUILD SELENIUM DOCKER IMAGE
-        ------------------------------ */
         stage('Build Selenium Test Image') {
             steps {
                 dir('selenium-tests') {
                     sh '''
-                        echo "=== Building Selenium Docker image ==="
+                        echo "=== Building Selenium test image ==="
                         docker build -t selenium-ci-tests:latest .
                     '''
                 }
             }
         }
 
-        /* -----------------------------
-            6) RUN SELENIUM TESTS
-        ------------------------------ */
         stage('Run Selenium Tests') {
             steps {
                 script {
                     sh """
-                        echo "=== Running Selenium Tests ==="
+                        echo "=== Starting Selenium Chrome container ==="
 
-                        # 1. Start the Selenium Node/Hub (Chrome Browser) on the CI network
-                        # We use its container name 'selenium-node-ci' as the SELENIUM_HOST
                         docker run -d --name selenium-node-ci --network ci-network \
-                            selenium/standalone-chrome:latest
+                            selenium/standalone-chrome:4.18.1
 
-                        # 2. Wait for the Selenium Node to be ready (Checking the host machine's 4444 port)
-                        echo "Waiting for Selenium Node to be ready..."
-                        for i in {1..30}; do
-                            if curl -s -f http://3.214.127.147:4444/wd/hub/status > /dev/null 2>&1; then
-                                echo "✓ Selenium Node ready"
+                        echo "Waiting for Selenium to be ready..."
+                        for i in {1..40}; do
+                            if curl -s -f http://selenium-node-ci:4444/wd/hub/status > /dev/null; then
+                                echo "✓ Selenium ready"
                                 break
-                            else
-                                echo "Waiting 2s..."
-                                sleep 2
                             fi
+                            echo "Waiting..."
+                            sleep 2
                         done
-                        
-                        # 3. Run the tests, passing the internal service names as environment variables
-                        # BASE_URL: http://frontend-ci:5173 (The website to test)
-                        # SELENIUM_HOST: selenium-node-ci (The Selenium browser instance)
+
+                        echo "=== Running tests ==="
                         docker run --rm --network ci-network \
-                        -e BASE_URL=http://frontend-ci:5173 \
-                        -e SELENIUM_HOST=selenium-node-ci \
-                        selenium-ci-tests:latest
+                            -e BASE_URL=http://frontend-ci:5173 \
+                            -e SELENIUM_HOST=selenium-node-ci \
+                            selenium-ci-tests:latest
                     """
                 }
             }
         }
 
-        /* -----------------------------
-            7) CLEANUP CI CONTAINERS
-        ------------------------------ */
         stage('Cleanup') {
             steps {
                 sh '''
@@ -141,14 +109,8 @@ pipeline {
     }
 
     post {
-        always {
-            echo "=== Pipeline Completed ==="
-        }
-        success {
-            echo '✅ Pipeline succeeded!'
-        }
-        failure {
-            echo '❌ Pipeline failed!'
-        }
+        always { echo "=== Pipeline Completed ===" }
+        success { echo '✅ Pipeline succeeded!' }
+        failure { echo '❌ Pipeline failed!' }
     }
 }
