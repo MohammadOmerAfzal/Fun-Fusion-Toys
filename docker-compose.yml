@@ -49,7 +49,7 @@ services:
 
   selenium-tests:
     build:
-      context: ./FunFusionToys_SeleniumTestCases  
+      context: ./tests  
     container_name: selenium-tests
     depends_on:
       - frontend-ci
