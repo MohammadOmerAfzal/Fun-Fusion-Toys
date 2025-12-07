@@ -35,7 +35,7 @@ pipeline {
                         docker network create ci-network || true
                         docker compose up -d --no-build
                         echo "Waiting for backend to be ready..."
-                        for i in {1..30}; do
+                        for i in $(seq 1 30); do
                             if curl -s http://backend-ci:5050 > /dev/null; then
                                 echo "✓ Backend ready"
                                 break
@@ -61,7 +61,7 @@ pipeline {
         stage('Run Selenium Tests') {
             steps {
                 script {
-                    sh """
+                    sh '''
                         echo "=== Starting Selenium Chrome container ==="
                         docker run -d --name selenium-node-ci --network ci-network \\
                             --shm-size=2g \\
@@ -69,7 +69,7 @@ pipeline {
                         
                         echo "=== Waiting for Selenium Grid to be fully ready ==="
                         READY=false
-                        for i in {1..90}; do
+                        for i in $(seq 1 90); do
                             # Check if container is running
                             if ! docker ps | grep -q selenium-node-ci; then
                                 echo "❌ Selenium container died"
@@ -78,19 +78,19 @@ pipeline {
                             fi
                             
                             # Check Selenium status endpoint
-                            STATUS=\$(docker exec selenium-node-ci curl -s http://localhost:4444/wd/hub/status 2>/dev/null || echo "")
+                            STATUS=$(docker exec selenium-node-ci curl -s http://localhost:4444/wd/hub/status 2>/dev/null || echo "")
                             
-                            if echo "\$STATUS" | grep -q '\\"ready\\":true'; then
-                                echo "✓ Selenium Grid reports ready"
+                            if echo "$STATUS" | grep -q '\\"ready\\":true'; then
+                                echo "✓ Selenium Grid is ready!"
                                 READY=true
                                 break
                             fi
                             
-                            echo "⏳ Waiting for Selenium... (attempt \$i/90)"
+                            echo "⏳ Waiting for Selenium... (attempt $i/90)"
                             sleep 2
                         done
                         
-                        if [ "\$READY" = false ]; then
+                        if [ "$READY" = "false" ]; then
                             echo "❌ Selenium Grid failed to become ready in time"
                             docker logs selenium-node-ci
                             exit 1
@@ -100,19 +100,19 @@ pipeline {
                         echo "⏳ Waiting 10 more seconds for complete stabilization..."
                         sleep 10
                         
-                        # Verify network connectivity from test container perspective
+                        # Verify network connectivity
                         echo "=== Testing network connectivity ==="
                         docker run --rm --network ci-network alpine sh -c "ping -c 2 selenium-node-ci" || true
                         
                         echo "=== Final Selenium status ==="
-                        docker exec selenium-node-ci curl -s http://localhost:4444/wd/hub/status | python3 -m json.tool || true
+                        docker exec selenium-node-ci curl -s http://localhost:4444/wd/hub/status || true
                         
                         echo "=== Running Selenium tests ==="
                         docker run --rm --network ci-network \\
                             -e BASE_URL=http://frontend-ci:5173 \\
                             -e SELENIUM_HOST=selenium-node-ci \\
                             selenium-ci-tests:latest
-                    """
+                    '''
                 }
             }
         }
