@@ -33,7 +33,10 @@ pipeline {
         stage('Clone Selenium Test Repository') {
             steps {
                 echo "Cloning Selenium test repository..."
-                sh 'git clone https://github.com/MohammadOmerAfzal/FunFusionToys_SeleniumTestCases.git tests'
+                sh '''
+                    rm -rf tests
+                    git clone https://github.com/MohammadOmerAfzal/FunFusionToys_SeleniumTestCases.git tests
+                '''
             }
         }
 
