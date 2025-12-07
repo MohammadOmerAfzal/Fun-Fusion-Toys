@@ -2,62 +2,57 @@ pipeline {
     agent any
 
     stages {
+
         stage('Clone Website Repository') {
             steps {
-                echo "Cloning website repository..."
+                echo "Cloning main website repository..."
                 git branch: 'master', url: 'https://github.com/MohammadOmerAfzal/Fun-Fusion-Toys.git'
+            }
+        }
+
+        stage('Stop Previous Containers') {
+            steps {
+                echo "Stopping previous containers if any..."
+                sh 'docker compose down || true'
             }
         }
 
         stage('Start Website Containers') {
             steps {
-                echo "Stopping previous containers if any..."
-                sh 'sudo docker compose down || true'
-
                 echo "Building and starting website containers..."
-                sh 'sudo docker compose up -d --build'
+                sh 'docker compose up -d --build mongo-ci backend-ci frontend-ci'
             }
         }
 
         stage('Verify Website Containers') {
             steps {
-                echo "Listing running containers..."
-                sh 'sudo docker ps'
-            }
-        }
-
-        stage('Show Website Logs (Optional)') {
-            steps {
-                echo "Showing last 50 lines of website logs..."
-                sh 'sudo docker compose logs --tail=50'
+                sh 'docker ps'
             }
         }
 
         stage('Clone Selenium Test Repository') {
             steps {
-                echo "Cloning Selenium tests repository..."
-                sh 'git clone -b main https://github.com/MohammadOmerAfzal/FunFusionToys_SeleniumTestCases.git'
+                echo "Cloning Selenium test repository..."
+                sh 'git clone https://github.com/MohammadOmerAfzal/FunFusionToys_SeleniumTestCases.git tests'
             }
         }
 
         stage('Build & Run Selenium Tests') {
             steps {
-                echo "Building and running Selenium tests using Docker..."
-                sh '''
-                    cd FunFusionToys_SeleniumTestCases
-                    sudo docker build -t selenium-tests .
-                    sudo docker run --rm --network host selenium-tests
-                '''
+                echo "Building and running Selenium tests container..."
+                sh 'docker compose build selenium-tests'
+                sh 'docker compose run --rm selenium-tests'
             }
         }
+
     }
 
     post {
         success {
-            echo "🎉 CI Build & Tests Completed Successfully!"
+            echo "🎉 CI Build and Tests Completed Successfully!"
         }
         failure {
-            echo "❌ Build or Tests Failed! Check logs."
+            echo "❌ Build or Tests Failed. Check logs."
         }
     }
 }
