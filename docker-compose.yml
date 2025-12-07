@@ -61,7 +61,7 @@ services:
   selenium-tests:
     build:
       # Assuming your test code is in a sibling directory named 'selenium-tests'
-      context: ../FunFusionToys_SeleniumTestCases 
+      context: ./tests/tests
       dockerfile: Dockerfile
     container_name: selenium-tests-ci 
     # NOTE: You will need to run the Selenium Chrome Node separately 
