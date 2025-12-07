@@ -7,9 +7,29 @@ pipeline {
                 script {
                     echo "=== Cleaning previous CI containers and networks ==="
                     sh '''
+                        # Stop and remove containers
                         docker rm -f mongo-ci backend-ci frontend-ci selenium-hub 2>/dev/null || true
+                        
+                        # Remove network (force remove even if containers are attached)
                         docker network rm ci-network 2>/dev/null || true
+                        
+                        # Extra cleanup: remove any dangling networks
+                        docker network prune -f || true
+                        
+                        # Verify network is gone
+                        if docker network ls | grep -q ci-network; then
+                            echo "Warning: ci-network still exists, forcing removal..."
+                            docker network inspect ci-network -f '{{range .Containers}}{{.Name}} {{end}}' | xargs -r docker rm -f || true
+                            docker network rm ci-network || true
+                        fi
                     '''
+                }
+            }
+        }
+        
+        stage('Clean Workspace') {
+            steps {
+                script {
                     cleanWs(cleanWhenNotBuilt: false, deleteDirs: true)
                 }
             }
@@ -38,13 +58,21 @@ pipeline {
             steps {
                 sh '''
                     echo "=== Creating Docker network ==="
-                    docker network create ci-network
+                    docker network create ci-network || {
+                        echo "Network creation failed, attempting cleanup and retry..."
+                        docker network rm ci-network 2>/dev/null || true
+                        sleep 2
+                        docker network create ci-network
+                    }
                     
                     echo "=== Starting Selenium Grid Hub ==="
-                    docker run -d --name selenium-hub --network ci-network \\
-                        --shm-size=2g \\
-                        -p 4444:4444 \\
+                    docker run -d --name selenium-hub --network ci-network \
+                        --shm-size=2g \
+                        -p 4444:4444 \
                         selenium/standalone-chrome:latest
+                    
+                    echo "=== Verifying Selenium Hub started ==="
+                    docker ps | grep selenium-hub
                 '''
             }
         }
@@ -59,8 +87,10 @@ pipeline {
                         echo "=== Waiting for services to be ready ==="
                         sleep 15
                         
+                        echo "=== Checking backend health ==="
                         for i in $(seq 1 20); do
-                            if curl -s http://backend-ci:5050 > /dev/null 2>&1; then
+                            if docker exec backend-ci curl -s http://localhost:5050/health > /dev/null 2>&1 || \
+                               docker exec backend-ci curl -s http://localhost:5050 > /dev/null 2>&1; then
                                 echo "✓ Backend is ready"
                                 break
                             fi
@@ -111,9 +141,9 @@ pipeline {
             steps {
                 sh '''
                     echo "=== Running Selenium test suite ==="
-                    docker run --rm --network ci-network \\
-                        -e BASE_URL=http://frontend-ci:5173 \\
-                        -e SELENIUM_HOST=selenium-hub \\
+                    docker run --rm --network ci-network \
+                        -e BASE_URL=http://frontend-ci:5173 \
+                        -e SELENIUM_HOST=selenium-hub \
                         selenium-tests:latest
                 '''
             }
@@ -124,8 +154,17 @@ pipeline {
         always {
             echo "=== Cleaning up ==="
             sh '''
+                # Stop docker compose services
+                cd website 2>/dev/null && docker compose down || true
+                
+                # Remove all CI containers
                 docker rm -f mongo-ci backend-ci frontend-ci selenium-hub 2>/dev/null || true
+                
+                # Remove network
                 docker network rm ci-network 2>/dev/null || true
+                
+                # Clean up test image
+                docker rmi selenium-tests:latest 2>/dev/null || true
             '''
             echo "=== Pipeline Completed ==="
         }
