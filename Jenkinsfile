@@ -41,9 +41,11 @@ pipeline {
         stage('Clone Website Repository') {
             steps {
                 sh '''
-                    echo "=== Website repository already checked out by Jenkins ==="
-                    echo "Repository: https://github.com/MohammadOmerAfzal/Fun-Fusion-Toys"
-                    echo "Branch: master"
+                    echo "=== Cloning website repository ==="
+                '''
+                git branch: 'master', url: 'https://github.com/MohammadOmerAfzal/Fun-Fusion-Toys.git'
+                sh '''
+                    echo "✓ Website repository cloned"
                     echo ""
                     echo "=== Repository structure ==="
                     ls -la
@@ -51,6 +53,9 @@ pipeline {
                     echo "=== Verifying docker-compose.yml exists ==="
                     if [ -f "docker-compose.yml" ]; then
                         echo "✓ docker-compose.yml found"
+                        echo ""
+                        echo "=== Docker Compose services ==="
+                        grep "^  [a-z]" docker-compose.yml || true
                     else
                         echo "❌ docker-compose.yml not found!"
                         exit 1
