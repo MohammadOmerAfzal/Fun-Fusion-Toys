@@ -38,12 +38,11 @@ pipeline {
                     sh '''
                         echo "=== Starting Website CI containers ==="
                         docker network create ci-network || true
-
                         docker compose up -d --no-build
 
                         echo "Waiting for backend to be ready..."
                         for i in {1..30}; do
-                            if curl -s -f http://backend-ci:5050 > /dev/null; then
+                            if curl -s http://backend-ci:5050 > /dev/null; then
                                 echo "✓ Backend ready"
                                 break
                             fi
@@ -73,13 +72,13 @@ pipeline {
                 script {
                     sh """
                         echo "=== Starting Selenium Chrome container ==="
-
-                        docker run -d --name selenium-node-ci --network ci-network \
-                            selenium/standalone-chrome:latest
+                        docker run -d --name selenium-node-ci --network ci-network \\
+                            --shm-size=2g \\
+                            selenium/standalone-chrome:121.0
 
                         echo "Waiting for Selenium to be ready..."
                         for i in {1..40}; do
-                            if curl -s -f http://selenium-node-ci:4444/wd/hub/status > /dev/null; then
+                            if curl -s http://selenium-node-ci:4444/status | grep -q '"ready":'; then
                                 echo "✓ Selenium ready"
                                 break
                             fi
@@ -88,9 +87,9 @@ pipeline {
                         done
 
                         echo "=== Running tests ==="
-                        docker run --rm --network ci-network \
-                            -e BASE_URL=http://frontend-ci:5173 \
-                            -e SELENIUM_HOST=selenium-node-ci \
+                        docker run --rm --network ci-network \\
+                            -e BASE_URL=http://frontend-ci:5173 \\
+                            -e SELENIUM_HOST=selenium-node-ci \\
                             selenium-ci-tests:latest
                     """
                 }
