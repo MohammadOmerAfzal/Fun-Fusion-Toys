@@ -23,7 +23,7 @@ services:
     volumes:
       - ./Basic Ecomerce:/app
     environment:
-      - PORT=5050
+      PORT=5050
       MONGO_URI_DOCKER=mongodb://admin:password@mongo-ci:27017/ecommerce?authSource=admin
     command: sh -c "npm install && npm start"
     ports:
