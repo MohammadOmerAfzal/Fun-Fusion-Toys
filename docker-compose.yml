@@ -48,15 +48,5 @@ services:
     depends_on:
       - backend-ci
 
-  selenium-ci:
-    build: ./selenium-tests
-    container_name: selenium-ci
-    environment:
-      BASE_URL: http://3.214.127.147:5050
-    depends_on:
-      - backend-ci
-    ports:
-       - "4444:4444"
-
 volumes:
   mongo_data:
