@@ -1,7 +1,6 @@
-version: "3.9"
+version: '3.9'
 
 services:
-
   mongo-ci:
     image: mongo:6
     container_name: mongo-ci
@@ -14,51 +13,70 @@ services:
     ports:
       - "27018:27017"
     networks:
-      - ci-network
+      - ci-network # <-- ADDED: Explicitly join CI network
 
   backend-ci:
     image: node:20
     container_name: backend-ci
-    working_dir: /app
+    working_dir: /app/backend
     volumes:
-      - ./Basic Ecomerce:/app
+      - "./Basic Ecomerce:/app/backend"    # Mount backend code
     environment:
-      PORT=5050
-      MONGO_URI_DOCKER=mongodb://admin:password@mongo-ci:27017/ecommerce?authSource=admin
-    command: sh -c "npm install && npm start"
+      # NOTE: This syntax (mapping) is essential to avoid the previous YAML error
+      MONGO_URI_DOCKER: mongodb://admin:password@mongo-ci:27017/ecommerce?authSource=admin
+      PORT: 5050
+    command: >
+      sh -c "
+      npm install &&
+      npm start
+      "
     ports:
       - "5050:5050"
     depends_on:
       - mongo-ci
     networks:
-      - ci-network
+      - ci-network # <-- ADDED: Explicitly join CI network
 
   frontend-ci:
     image: node:20
     container_name: frontend-ci
-    working_dir: /app
+    working_dir: /app/frontend
     volumes:
-      - ./frontend/ToyStore:/app
-    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+      - ./frontend/ToyStore:/app/frontend    # Mount frontend code
+    command: >
+      sh -c "
+      npm install &&
+      npm run dev -- --host 0.0.0.0
+      "
     ports:
-      - "5175:5173"
+      - "5175:5173"      # CI frontend port
     depends_on:
       - backend-ci
     networks:
-      - ci-network
+      - ci-network # <-- ADDED: Explicitly join CI network
 
+  # -----------------------------------------------------------------
+  # APPENDED: SELENIUM TEST BUILD SERVICE
+  # -----------------------------------------------------------------
   selenium-tests:
     build:
-      context: ./tests  
-    container_name: selenium-tests
+      # Assuming your test code is in a sibling directory named 'selenium-tests'
+      context: ../FunFusionToys_SeleniumTestCases 
+      dockerfile: Dockerfile
+    container_name: selenium-tests-ci 
+    # NOTE: You will need to run the Selenium Chrome Node separately 
+    # using docker run in Jenkins (as configured in your pipeline).
     depends_on:
       - frontend-ci
     networks:
-      - ci-network
+      - ci-network # <-- ADDED: Explicitly join CI network
 
 volumes:
   mongo_data:
 
+# -----------------------------------------------------------------
+# APPENDED: NETWORKS DEFINITION
+# -----------------------------------------------------------------
 networks:
   ci-network:
     driver: bridge
