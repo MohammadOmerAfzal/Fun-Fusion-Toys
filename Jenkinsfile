@@ -40,6 +40,22 @@ pipeline {
             }
         }
 
+        stage('Wait for Frontend') {
+            steps {
+                echo "Waiting for frontend to be ready..."
+                sh '''
+                    for i in {1..30}; do
+                        if curl --silent --fail http://localhost:5175; then
+                            echo "Frontend is up!"
+                            break
+                        fi
+                        echo "Waiting for frontend..."
+                        sleep 2
+                    done
+                '''
+            }
+        }
+
         stage('Build & Run Selenium Tests') {
             steps {
                 echo "Building and running Selenium tests container..."
